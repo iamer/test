@@ -1,0 +1,119 @@
+#!/bin/bash
+set -x
+
+SERVICE='tar_git'
+
+set_default_params () {
+  MYURL=""
+}
+
+get_config_options () {
+  # config options for this host ?
+  if [ -f /etc/obs/services/$SERVICE ]; then
+    . /etc/obs/services/$SERVICE
+  fi
+  # config options for this user ?
+  if [ -f "$HOME"/.obs/$SERVICE ]; then
+    . "$HOME"/.obs/$SERVICE
+  fi
+}
+
+parse_params () {
+  while test $# -gt 0; do
+    case $1 in
+      *-url)
+        MYURL="$2"
+        shift
+      ;;
+      *-outdir)
+        MYOUTDIR="$2"
+        shift
+      ;;
+      *)
+        echo "Unknown parameter: $1"
+        echo 'Usage: $SERVICE --url $URL --outdir $OUT'
+        exit 1
+      ;;
+    esac
+    shift
+  done
+}
+
+error () {
+  echo "ERROR: $*"
+  exit 1
+}
+
+debug () {
+  [ -n "$DEBUG_TAR_SCM" ] && echo "$*"
+}
+
+safe_run () {
+  if ! "$@"; then
+    error "$* failed; aborting!"
+  fi
+}
+
+sanitise_params () {
+
+  if [ -z "$MYURL" ]; then
+    error "no checkout URL is given via --url parameter!"
+  fi
+  if [ -z "$MYOUTDIR" ]; then
+    error "no output directory is given via --outdir parameter!"
+  fi
+
+}
+
+find_spec_file () {
+
+  [[ -d $1/rpm ]] || error "no rpm directory in this git clone"
+
+  SPECFILE="$(find $1/rpm/ -type f -name '*.spec')"
+
+  [[ "$(echo $SPECFILE | wc -w)" -eq 1 ]] || error "Need single spec file in rpm"
+
+}
+
+clone () {
+
+  CLONE_NAME="${MYURL%/}"
+  CLONE_NAME="${CLONE_NAME##*/}"
+  CLONE_NAME="${CLONE_NAME%.git}"
+  CLONE_NAME="${CLONE_NAME#*@*:}"
+
+  echo "Fetching from $MYURL to $CLONE_NAME ..."
+  safe_run git clone "$MYURL" "$CLONE_NAME"
+
+  find_spec_file "$CLONE_NAME"
+
+  cp $SPECFILE .
+
+  VERSION=$(grep Version: $SPECFILE | gawk '{ print $2 }' | sed -e 's/\.git.*//')
+
+  sha1sum=$(git --git-dir=$CLONE_NAME/.git rev-list --max-count=1 --abbrev-commit master)
+  VERSHA="$VERSION".git"$sha1sum"
+  git --git-dir=$CLONE_NAME/.git archive --prefix=$CLONE_NAME-$VERSHA/ master | bzip2 - > $CLONE_NAME-$VERSHA.tar.bz2
+  sed -i -e "s/^Version:.*$/Version:    $VERSHA/g" $(basename $SPECFILE)
+
+}
+
+main () {
+  set_default_params
+  get_config_options
+
+  parse_params "$@"
+  sanitise_params
+
+  SRCDIR=$(pwd)
+  cd "$MYOUTDIR"
+  detect_default_filename_param
+
+  clone
+  echo "contents of cwd :"
+  echo "$(ls)"
+}
+
+main "$@"
+
+exit 0

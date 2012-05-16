@@ -1,0 +1,9 @@
+<service name="tar_git">
+  <summary>Create a tar ball from a git repository</summary>
+  <description>This service checksout or updates from a git.</description>
+  <parameter name="url">
+    <description>Checkout url</description>
+    <required/>
+  </parameter>
+</service>
+

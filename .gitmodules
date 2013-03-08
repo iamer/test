@@ -1,0 +1,3 @@
+[submodule "cutes"]
+	path = cutes
+	url = https://github.com/deztructor/cutes.git
